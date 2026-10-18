@@ -1,0 +1,60 @@
+name: Daily news digest
+
+on:
+  schedule:
+    # GitHub starts scheduled runs late, most of all on the hour, so these use odd minutes.
+    # Daily digest: 03:17 UTC = 06:17 in Israel in summer, 05:17 in winter
+    - cron: "17 3 * * *"
+    # Weekly review: Fridays, about an hour after the daily digest
+    - cron: "23 4 * * 5"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Which email to send (feeds only checks the sources and sends nothing)
+        type: choice
+        options: [daily, weekly, feeds]
+        default: daily
+
+# The daily run commits history.json back to the repo
+permissions:
+  contents: write
+
+# Never run two at once: the weekly review must see the history the daily run saved
+concurrency:
+  group: digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    # Skip in the template repository itself, which has no secrets; copies made from it run normally
+    if: github.repository != 'danielle-h/news-digest-template'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python digest.py ${{ (github.event.schedule == '23 4 * * 5' || inputs.mode == 'weekly') && '--weekly' || inputs.mode == 'feeds' && '--fetch-only' || '' }}
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          MAIL_TO: ${{ vars.MAIL_TO }}
+          DIGEST_LANGUAGE: ${{ vars.DIGEST_LANGUAGE }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          GEMINI_FALLBACK_MODEL: ${{ vars.GEMINI_FALLBACK_MODEL }}
+          ELECTION_SECTION: ${{ vars.ELECTION_SECTION }}
+      - name: Save story history and last-run time
+        run: |
+          for file in history.json state.json; do
+            if [ -f "$file" ]; then git add "$file"; fi
+          done
+          if ! git diff --cached --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "Update story history"
+            git push
+          fi
