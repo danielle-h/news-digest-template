@@ -50,7 +50,7 @@ Optional variables:
 
 | Name | Purpose |
 |---|---|
-| `DIGEST_LANGUAGE` | `English` (default) or another language, such as `Hebrew` |
+| `DIGEST_LANGUAGE` | `English` (default). The code also accepts other languages, with a right-to-left layout for `Hebrew`, but only English has been tested |
 | `ELECTION_SECTION` | `on` adds an Elections section (the wording is written for Israel's election; edit `ELECTION_SECTION` in `digest.py` for yours) |
 | `GEMINI_MODEL` | Main model; defaults to `gemini-flash-latest` |
 | `GEMINI_FALLBACK_MODEL` | Used when the main model is busy; defaults to `gemini-flash-lite-latest` |
