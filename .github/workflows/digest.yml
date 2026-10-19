@@ -10,10 +10,14 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Which email to send (feeds only checks the sources and sends nothing)
+        description: "Which email to send. feeds: check the sources, send nothing. test: send a daily digest without saving history. preview: write the daily digest to a downloadable file, send nothing."
         type: choice
-        options: [daily, weekly, feeds]
+        options: [daily, weekly, feeds, test, preview]
         default: daily
+      language:
+        description: Digest language for this run only (leave empty for the usual one)
+        type: string
+        required: false
 
 # The daily run commits history.json back to the repo
 permissions:
@@ -37,16 +41,23 @@ jobs:
           python-version: "3.13"
           cache: pip
       - run: pip install -r requirements.txt
-      - run: python digest.py ${{ (github.event.schedule == '23 4 * * 5' || inputs.mode == 'weekly') && '--weekly' || inputs.mode == 'feeds' && '--fetch-only' || '' }}
+      - run: python digest.py ${{ (github.event.schedule == '23 4 * * 5' || inputs.mode == 'weekly') && '--weekly' || inputs.mode == 'feeds' && '--fetch-only' || inputs.mode == 'test' && '--no-save' || inputs.mode == 'preview' && '--dry-run' || '' }}
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           MAIL_TO: ${{ vars.MAIL_TO }}
-          DIGEST_LANGUAGE: ${{ vars.DIGEST_LANGUAGE }}
+          DIGEST_LANGUAGE: ${{ inputs.language || vars.DIGEST_LANGUAGE }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
           GEMINI_FALLBACK_MODEL: ${{ vars.GEMINI_FALLBACK_MODEL }}
           ELECTION_SECTION: ${{ vars.ELECTION_SECTION }}
+      - name: Upload preview
+        if: inputs.mode == 'preview'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-preview
+          path: out/
+          retention-days: 3
       - name: Save story history and last-run time
         run: |
           for file in history.json state.json; do

@@ -50,7 +50,7 @@ Optional variables:
 
 | Name | Purpose |
 |---|---|
-| `DIGEST_LANGUAGE` | `English` (default). The code also accepts other languages, with a right-to-left layout for `Hebrew`, but only English has been tested |
+| `DIGEST_LANGUAGE` | `English` (default) or `Hebrew`, which gets a right-to-left layout and Hebrew outlet names. Both have been tested for the daily digest; the weekly review has only been tested in English. Other languages are accepted but untested |
 | `ELECTION_SECTION` | `on` adds an Elections section (the wording is written for Israel's election; edit `ELECTION_SECTION` in `digest.py` for yours) |
 | `GEMINI_MODEL` | Main model; defaults to `gemini-flash-latest` |
 | `GEMINI_FALLBACK_MODEL` | Used when the main model is busy; defaults to `gemini-flash-lite-latest` |
@@ -62,8 +62,14 @@ Never paste keys or passwords into an AI chat or commit them to the repository.
 Go to **Actions > Daily news digest > Run workflow**:
 
 - `feeds` checks every source from GitHub's servers and sends no email. Run this first.
+- `preview` writes the daily digest to a file you can download from the run's page, and sends no
+  email. Use it to try changes.
+- `test` sends a daily digest by email without saving anything, so the next scheduled digest is
+  unaffected.
 - `daily` sends the digest.
 - `weekly` sends the weekly review (it needs a few days of history first).
+
+The optional **language** field sets the language for that run only, for example `Hebrew`.
 
 After that it runs by itself: the daily digest at 03:17 UTC and the weekly review on Fridays at
 04:23 UTC. Change the times in `.github/workflows/digest.yml`.
@@ -78,6 +84,8 @@ After that it runs by itself: the daily digest at 03:17 UTC and the weekly revie
    - `site` (optional): the site's domain. When the site's own feed fails, or there is none, the
      script reads a Google News search of that domain, then a Bing News search.
    - `window_hours` (optional): read further back than usual, for feeds that publish rarely.
+   - `display_names` (optional): the outlet's name in other languages, used for the source links
+     when the digest is in that language, for example `{"hebrew": "הארץ"}`.
 
    To find a site's feed, try adding `/feed` or `/rss` to its address, or look for an RSS link on
    the page.
@@ -96,6 +104,7 @@ pip install -r requirements.txt
 cp .env.example .env            # then fill it in
 python digest.py --fetch-only   # check the feeds, no Gemini or email
 python digest.py --dry-run      # write out/digest.html, no email, history untouched
+python digest.py --no-save      # send the email without updating the history
 ```
 
 ## How it works
