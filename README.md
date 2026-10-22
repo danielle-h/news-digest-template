@@ -53,7 +53,7 @@ Optional variables:
 | `DIGEST_LANGUAGE` | `English` (default) or `Hebrew`, which gets a right-to-left layout and Hebrew outlet names. Both have been tested for the daily digest; the weekly review has only been tested in English. Other languages are accepted but untested |
 | `ELECTION_SECTION` | `on` adds an Elections section (the wording is written for Israel's election; edit `ELECTION_SECTION` in `digest.py` for yours) |
 | `GEMINI_MODEL` | Main model; defaults to `gemini-flash-latest` |
-| `GEMINI_FALLBACK_MODEL` | Used when the main model is busy; defaults to `gemini-flash-lite-latest` |
+| `GEMINI_FALLBACK_MODEL` | Used when the main model is busy; defaults to `gemini-flash-lite-latest`. Can list several models, comma-separated, tried in turn |
 
 Never paste keys or passwords into an AI chat or commit them to the repository.
 

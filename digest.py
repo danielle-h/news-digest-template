@@ -359,11 +359,14 @@ def build_weekly_prompt(week, background, leans, today):
 
 def ask_gemini(system_prompt, user_prompt):
     """Return (text, model used, whether that was the fallback model)."""
-    # Free-tier models are often overloaded, but the lite fallback follows the rules much less
-    # well (it repeats old stories and misses big ones), so keep retrying the main model first
+    # Free-tier models are often overloaded, and the overload moves between models, so try the
+    # main model a few times, then each fallback in turn (GEMINI_FALLBACK_MODEL may list several,
+    # comma-separated), twice round
     main = os.environ.get("GEMINI_MODEL") or "gemini-flash-latest"
-    fallback = os.environ.get("GEMINI_FALLBACK_MODEL") or "gemini-flash-lite-latest"
-    schedule = [(main, 0), (main, 60), (main, 120), (main, 180), (main, 240), (fallback, 30), (fallback, 60)]
+    fallbacks = [m.strip() for m in (os.environ.get("GEMINI_FALLBACK_MODEL") or "gemini-flash-lite-latest").split(",")
+                 if m.strip()]
+    schedule = [(main, 0), (main, 60), (main, 120), (main, 180)]
+    schedule += [(model, 30) for _ in range(2) for model in fallbacks]
     body = {
         "system_instruction": {"parts": [{"text": system_prompt}]},
         "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
@@ -373,7 +376,7 @@ def ask_gemini(system_prompt, user_prompt):
         time.sleep(wait)
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         try:
-            response = requests.post(url, json=body, timeout=300,
+            response = requests.post(url, json=body, timeout=180,
                                      headers={"x-goog-api-key": os.environ["GEMINI_API_KEY"]})
         except requests.RequestException as exc:
             # An overloaded model sometimes accepts the request and never answers

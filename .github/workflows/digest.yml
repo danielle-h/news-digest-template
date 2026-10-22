@@ -33,7 +33,7 @@ jobs:
     # Skip in the template repository itself, which has no secrets; copies made from it run normally
     if: github.repository != 'danielle-h/news-digest-template'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
