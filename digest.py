@@ -206,14 +206,36 @@ def feed_urls(feed):
     return urls
 
 
+def spread(items, count):
+    """Up to count items from a newest-first list, spread evenly across it."""
+    if len(items) <= count:
+        return items
+    step = (len(items) - 1) / (count - 1)
+    return [items[round(k * step)] for k in range(count)]
+
+
 def fetch_feed(feed, window_hours):
     """Return (feed, items, error, route). Tries each of the feed's URLs until one works."""
     errors = []
-    for url, route in feed_urls(feed):
-        items, error = read_feed(url, feed.get("window_hours", window_hours))
-        if not error:
-            return feed, items, None, route
-        errors.append(f"{route}: {error[:80]}")
+    window = feed.get("window_hours", window_hours)
+    max_items = feed.get("max_items", MAX_ITEMS_PER_FEED)
+    urls = feed_urls(feed)
+    for index, (url, route) in enumerate(urls):
+        items, error = read_feed(url, window, max_items)
+        if error:
+            errors.append(f"{route}: {error[:80]}")
+            continue
+        if feed.get("also_search") and index == 0 and len(urls) > 1 and len(items) < max_items:
+            # Some own feeds hold only their latest 10-20 items, a few hours of news. Fill the
+            # rest of the window from a news search of the site.
+            search_url, search_route = urls[1]
+            older, search_error = read_feed(search_url, window, 100)
+            if not search_error:
+                oldest = min((i["published"] for i in items if "published" in i), default=time.time())
+                older = [i for i in older if i.get("published", 0) < oldest]
+                items = items + spread(older, max_items - len(items))
+                route = f"{route} + {search_route}"
+        return feed, items, None, route
     return feed, [], "; ".join(errors), None
 
 
@@ -233,7 +255,7 @@ def download(url):
         return response.content
 
 
-def read_feed(url, window_hours=WINDOW_HOURS):
+def read_feed(url, window_hours=WINDOW_HOURS, max_items=MAX_ITEMS_PER_FEED):
     """Return (items, error). Items are dicts with title, blurb, link, published."""
     try:
         parsed = feedparser.parse(download(url))
@@ -266,12 +288,9 @@ def read_feed(url, window_hours=WINDOW_HOURS):
             undated.append(item)
 
     dated.sort(key=lambda i: i["published"], reverse=True)
-    if len(dated) > MAX_ITEMS_PER_FEED:
-        # Busy feeds post 50-100 items a day, so the newest 20 would cover only the last hour or
-        # two. Take items spread evenly across the whole window instead.
-        step = (len(dated) - 1) / (MAX_ITEMS_PER_FEED - 1)
-        dated = [dated[round(k * step)] for k in range(MAX_ITEMS_PER_FEED)]
-    items = dated or undated[:MAX_UNDATED_ITEMS]
+    # Busy feeds post 50-100 items a day, so the newest 20 would cover only the last hour or
+    # two. Take items spread evenly across the whole window instead.
+    items = spread(dated, max_items) or undated[:MAX_UNDATED_ITEMS]
     if not parsed.entries:
         return [], "feed returned no entries"
     return items, None

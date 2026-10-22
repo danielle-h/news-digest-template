@@ -83,6 +83,8 @@ After that it runs by itself: the daily digest at 03:17 UTC and the weekly revie
      `light` (light news, used only for "And finally").
    - `site` (optional): the site's domain. When the site's own feed fails, or there is none, the
      script reads a Google News search of that domain, then a Bing News search.
+   - `also_search` (optional, needs `site`): `true` for sites whose own feed holds only its latest
+     10-20 items. The rest of the day is filled in from the Google News search.
    - `window_hours` (optional): read further back than usual, for feeds that publish rarely.
    - `display_names` (optional): the outlet's name in other languages, used for the source links
      when the digest is in that language, for example `{"hebrew": "הארץ"}`.
