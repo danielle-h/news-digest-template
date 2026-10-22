@@ -34,7 +34,7 @@ HISTORY_FILE = ROOT / "history.json"
 STATE_FILE = ROOT / "state.json"  # when the last daily digest was sent
 WINDOW_HOURS = 26          # used when there is no record of the last run
 MAX_WINDOW_HOURS = 48      # never look back further than this, however long since the last run
-MAX_ITEMS_PER_FEED = 20
+MAX_ITEMS_PER_FEED = 30    # per feed, spread across the window (see read_feed)
 MAX_UNDATED_ITEMS = 10     # feeds without dates: take only the top of the feed
 BLURB_CHARS = 300
 HISTORY_KEEP_DAYS = 45     # older story records are deleted
@@ -65,6 +65,10 @@ a story, compare it with EARLIER STORIES from the last 3 days. If today's items 
 earlier record already says, leave the story out entirely, even if outlets are still writing about \
 it. Include a continuing story only when the items report a concrete new development, and then \
 write only that development. A short digest is better than a repetitive one.
+
+Choose stories by importance. A new event that several outlets report is important, even when it \
+is not about politics or security (for example a major technology failure, disaster or economic \
+event), and it must not be left out in favour of smaller or repeated stories.
 
 ## Top stories in Israel
 Up to 10 of the most important Israeli stories; fewer is fine on a quiet day. For each: a bold \
@@ -262,7 +266,12 @@ def read_feed(url, window_hours=WINDOW_HOURS):
             undated.append(item)
 
     dated.sort(key=lambda i: i["published"], reverse=True)
-    items = dated[:MAX_ITEMS_PER_FEED] or undated[:MAX_UNDATED_ITEMS]
+    if len(dated) > MAX_ITEMS_PER_FEED:
+        # Busy feeds post 50-100 items a day, so the newest 20 would cover only the last hour or
+        # two. Take items spread evenly across the whole window instead.
+        step = (len(dated) - 1) / (MAX_ITEMS_PER_FEED - 1)
+        dated = [dated[round(k * step)] for k in range(MAX_ITEMS_PER_FEED)]
+    items = dated or undated[:MAX_UNDATED_ITEMS]
     if not parsed.entries:
         return [], "feed returned no entries"
     return items, None
@@ -330,32 +339,32 @@ def build_weekly_prompt(week, background, leans, today):
 
 
 def ask_gemini(system_prompt, user_prompt):
-    # Free-tier models are often overloaded, so alternate between two models while retrying
-    models = [os.environ.get("GEMINI_MODEL") or "gemini-flash-latest",
-              os.environ.get("GEMINI_FALLBACK_MODEL") or "gemini-flash-lite-latest"]
+    """Return (text, model used, whether that was the fallback model)."""
+    # Free-tier models are often overloaded, but the lite fallback follows the rules much less
+    # well (it repeats old stories and misses big ones), so keep retrying the main model first
+    main = os.environ.get("GEMINI_MODEL") or "gemini-flash-latest"
+    fallback = os.environ.get("GEMINI_FALLBACK_MODEL") or "gemini-flash-lite-latest"
+    schedule = [(main, 0), (main, 60), (main, 120), (main, 180), (main, 240), (fallback, 30), (fallback, 60)]
     body = {
         "system_instruction": {"parts": [{"text": system_prompt}]},
         "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
         "generationConfig": {"temperature": 0.3},
     }
-    attempts = 6
-    for attempt in range(attempts):
-        model = models[attempt % len(models)]
+    for attempt, (model, wait) in enumerate(schedule):
+        time.sleep(wait)
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         response = requests.post(url, json=body, timeout=300,
                                  headers={"x-goog-api-key": os.environ["GEMINI_API_KEY"]})
         if not response.ok:
             print(f"Gemini {model} failed ({response.status_code}): {response.text[:300]}")
-            if attempt == attempts - 1:
+            if attempt == len(schedule) - 1:
                 sys.exit("Gemini request failed on every attempt.")
-            if response.status_code in (429, 500, 503):
-                time.sleep(30 * (attempt + 1))
             continue
         print(f"Summarised with {model}")
         data = response.json()
         try:
             parts = data["candidates"][0]["content"]["parts"]
-            return "".join(part.get("text", "") for part in parts)
+            return "".join(part.get("text", "") for part in parts), model, model != main
         except (KeyError, IndexError):
             sys.exit(f"Gemini returned no text: {json.dumps(data)[:500]}")
 
@@ -503,11 +512,15 @@ def run_daily(args, feeds, language, today):
     history = load_history()
     elections = ELECTION_SECTION if os.environ.get("ELECTION_SECTION", "").lower() == "on" else ""
     system_prompt = DAILY_PROMPT.format(language=language, election_section=elections)
-    answer = ask_gemini(system_prompt, build_daily_prompt(items, history, today))
+    answer, model, used_fallback = ask_gemini(system_prompt, build_daily_prompt(items, history, today))
     summary, stories = split_response(answer)
     names = display_names(feeds, language)
     summary = link_citations(summary, {item["id"]: [(names[item["source"]], item["link"])] for item in items})
-    page = render_html(summary, feed_footer(counts, failures), language)
+    footer = feed_footer(counts, failures)
+    if used_fallback:
+        footer = (f"<p><b>Written by the backup model ({html.escape(model)})</b> because the main one "
+                  "was overloaded. It is less careful about repeats and may miss stories.</p>" + footer)
+    page = render_html(summary, footer, language)
     deliver(f"News digest, {today:%d %b %Y}", page, summary, args.dry_run, "digest.html")
     if args.dry_run or args.no_save:
         print("Test run: history.json and state.json left untouched")
@@ -533,7 +546,7 @@ def run_weekly(args, feeds, language, today):
     background = [r for r in history if days_ago(today, HISTORY_CONTEXT_DAYS) <= r["date"] <= days_ago(today, 7)]
     leans = {feed["name"]: feed["lean"] for feed in feeds}
 
-    review = ask_gemini(WEEKLY_PROMPT.format(language=language), build_weekly_prompt(week, background, leans, today))
+    review, _, _ = ask_gemini(WEEKLY_PROMPT.format(language=language), build_weekly_prompt(week, background, leans, today))
     names = display_names(feeds, language)
     sources = {number: [(names.get(link["outlet"], link["outlet"]), link["link"]) for link in r["links"]]
                for number, r in enumerate(week, 1)}
