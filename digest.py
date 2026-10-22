@@ -372,8 +372,15 @@ def ask_gemini(system_prompt, user_prompt):
     for attempt, (model, wait) in enumerate(schedule):
         time.sleep(wait)
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-        response = requests.post(url, json=body, timeout=300,
-                                 headers={"x-goog-api-key": os.environ["GEMINI_API_KEY"]})
+        try:
+            response = requests.post(url, json=body, timeout=300,
+                                     headers={"x-goog-api-key": os.environ["GEMINI_API_KEY"]})
+        except requests.RequestException as exc:
+            # An overloaded model sometimes accepts the request and never answers
+            print(f"Gemini {model} failed: {type(exc).__name__}")
+            if attempt == len(schedule) - 1:
+                sys.exit("Gemini request failed on every attempt.")
+            continue
         if not response.ok:
             print(f"Gemini {model} failed ({response.status_code}): {response.text[:300]}")
             if attempt == len(schedule) - 1:
