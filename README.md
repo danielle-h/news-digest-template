@@ -1,3 +1,5 @@
+[עברית](README.he.md)
+
 # AI news digest template
 
 A free daily email digest that reads news sites from across the political spectrum, asks Gemini
@@ -127,7 +129,8 @@ keeps it predictable and cheap.
 
 - **Some sites block GitHub's servers.** That's why feeds can fall back to Google News and Bing
   News searches. The footer of each email lists any feed that failed.
-- **Gemini's free tier is sometimes busy.** The script retries, alternating between two models.
+- **Gemini's free tier is sometimes busy.** The script retries the main model a few times, then
+  each fallback model in turn.
   If every attempt fails, the run fails and GitHub emails you.
 - **GitHub starts scheduled runs late,** sometimes by hours. That's normal for free scheduled
   workflows. The schedule uses odd minutes, which helps; if you need an exact time, trigger the
